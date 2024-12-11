@@ -5,16 +5,6 @@
 #include <stdio.h>
 #include <stdint.h>                                //to use uint32_t without any problems
 
-typedef struct                                     //Define the specs structure
-{
-    unsigned int frames_count;
-    unsigned short fps;
-    float duration;
-    uint32_t width;
-    uint32_t height;
-}specs;
-
-
                                                     /*The specs_new function will allocate memory 
                                                     for a new specs structure and initialize it with the provided values*/
 specs *specs_new(unsigned int frames_count, unsigned short fps, float duration, uint32_t width, uint32_t height)
@@ -34,7 +24,6 @@ specs *specs_new(unsigned int frames_count, unsigned short fps, float duration, 
     new_specs->width = width;
     new_specs->height = height;
     return new_specs;
-    // free(new_specs);
 }
 
 
@@ -76,7 +65,6 @@ char *specs_serialize(specs *specifications)
                             specifications->height);
 
     return buffer;                                       
-    // free(serialized);
 }
 
 
@@ -102,5 +90,29 @@ specs *specs_deserialize(char *str)
                             &new_specs->height);
 
     return new_specs;
-    // free(deserialized);
+}
+
+
+//function reads data from text file
+specs *specs_read_from(char *file_path)
+{
+    FILE *file = fopen (file_path, "r");             // Open a file in read mode ("r")
+    if (file==NULL)                                  //FILE is a Pointer used in almost all the file operations in C.
+    {                                                   //check if file open correctly or not
+        fprintf (stderr, "Error: Unable to open file %s\n",file_path);
+        return NULL;
+    }
+
+    char file_content [100];
+    fgets (file_content,sizeof(file_content),file);        //fgets for reading a string with spaces from the file
+
+    if (file_content==NULL)                                //check if the string from file stored or not
+    {
+        fprintf (stderr, "Error: Could not read from file %s\n",file_path);
+        fclose (file); 
+        return NULL;
+    }
+
+    fclose (file);                                         //to close the opened file
+    return specs_deserialize (file_content);
 }

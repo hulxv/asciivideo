@@ -39,4 +39,11 @@ char *specs_serialize(specs *specifications);
  */
 specs *specs_deserialize(char *str);
 
+
+
+specs *specs_read_from(char *file_path);
+
+//function reads data from text file and return the deserialized string
+
+
 #endif
