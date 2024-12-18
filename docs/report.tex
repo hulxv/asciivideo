@@ -1,0 +1,193 @@
+\documentclass[a4paper,12pt]{article}
+
+% Packages
+\usepackage{graphicx} % For including images
+\usepackage{listings} % For code blocks
+\usepackage{xcolor} % For syntax highlighting
+\usepackage{hyperref} % For hyperlinks
+\usepackage{geometry} % For margin settings
+\geometry{margin=0.7in}
+
+% Code formatting
+\lstset{
+    % language=text,
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{gray}\itshape,
+    stringstyle=\color{red},
+    showstringspaces=false,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    captionpos=b,
+}
+
+% Title and Author
+\title{Terminal-Based Video Player and Audio Extractor\\
+       \large A Project Report}
+\author{Your Name}
+\date{\today}
+
+\begin{document}
+
+
+\begin{titlepage}
+
+\begin{center}
+    \textsc{Zagazig University \\}
+	\textsc{Faculty of Engineering \\}
+	%\textnormal{ \LARGE{Corso di Laurea Triennale/Magistrale in ???\\}}
+	\fontsize{5mm}{10mm}\selectfont 
+  \textsc{Computer Programming  \\}
+	\vspace{40mm}
+ 
+  
+
+	\fontsize{15mm}{10mm} 
+	\textsc{AsciiPlayer\\}
+	\fontsize{5mm}{10mm} 
+	\textsc{A Terminal-based Video Player \\}
+        \vspace{20mm}
+
+
+
+\end{center}
+
+\vspace{80mm}
+
+
+\begin{center}
+    
+ 
+    \fontsize{5mm}{7mm}\selectfont 
+    \textsc{{Computer and Systems Engineering } \\}
+ 	\vspace{1mm}
+        \textsc{Level 100}
+        \vspace{10mm}
+
+
+
+\end{center}
+
+\centering{Dec 2024}
+
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% Section: Introduction
+\section{Introduction}
+ASCII art is a graphic design technique that uses computers for presentation and consists of pictures pieced together from the 95 printable (from a total of 128) characters defined by the ASCII Standard from 1963 and ASCII compliant character sets with proprietary extended characters (beyond the 128 characters of standard 7-bit ASCII)
+
+\begin{lstlisting}[caption={An ASCII art for Ant bear from https://www.asciiart.eu/animals/aardvarks}]
+            ,
+       (`.  : \               __..----..__
+        `.`.| |:          _,-':::''' '  `:`-._
+          `.:\||       _,':::::'         `::::`-.
+            \\`|    _,':::::::'     `:.     `':::`.
+             ;` `-''  `::::::.                  `::\
+          ,-'      .::'  `:::::.         `::..    `:\
+        ,' /_) -.            `::.           `:.     |
+      ,'.:     `    `:.        `:.     .::.          \
+ __,-'   ___,..-''-.  `:.        `.   /::::.         |
+|):'_,--'           `.    `::..       |::::::.      ::\
+ `-'                 |`--.:_::::|_____\::::::::.__  ::|
+                     |   _/|::::|      \::::::|::/\  :|
+                     /:./  |:::/        \__:::):/  \  :\
+                   ,'::'  /:::|        ,'::::/_/    `. ``-.__
+     jrei         ''''   (//|/\      ,';':,-'         `-.__  `'--..__
+                                                           `''---::::'
+
+\end{lstlisting}
+
+
+It's a cool idea and started from old TTY machines (or teletypewriter) as early as 1923. Nowadays, Linux machines and Unix-Like systems use the terminal in daily uses, where we cannot type or entering anything else than ASCII characters. So, if we need to see or watch something on this terminal enviromment, will be impossible without using complex terminal emulators like `kitty' or `alacritty` that handle the image previewing inside it. \\ \\
+This is our idea, A tool that make you able to play your videos inside the terminal without need to any bloatwares or stupid things that make your machine more heavier!
+
+% Section: Project Architecture
+\section{Project Architecture}
+The project consists of the following major components:
+\begin{enumerate}
+    \item \textbf{Video Initialization:} Initializes video file and streams using FFmpeg.
+    \item \textbf{Frame Rendering:} Uses ncurses to render ASCII frames in the terminal.
+    \item \textbf{Audio Extraction:} Extracts audio from the video and saves it as a separate file.
+    \item \textbf{Error Handling:} Ensures robust error management across all modules.
+\end{enumerate}
+
+
+% Section: Code Explanation
+\section{Behind the scenes}
+Here, We will talk about the parts of our project and how it works behind the scenes.
+
+\subsection{Pixel, The Atom of what we see}
+Pixel is the smallest unit of the frame of image or video that we see and the most important thing in the frame, everything in the frame contains pixel beginning from the text to the smallest drop seen in the photo. \\
+
+To work with this concept in C, we need to abstract it by make a struct for it contains the important data about it. Struct pixel is used to represent RGB colors in 16-bit unsigned int representing red (r), green (g) and blue (r) colors.
+
+\begin{lstlisting}[language=c] 
+typedef struct
+{
+    uint16_t r;
+    uint16_t g;
+    uint16_t b;
+} pixel;
+\end{lstlisting}
+
+Now, We can do the important operations that we need. In first, We need to calculate the intensity level of this pixel to select the suitable ASCII character for it using this formula:
+$$I = 0.299*R + 0.587*G + 0.114*B$$ 
+
+\begin{lstlisting}[language=c]
+uint16_t pixel_intensity(pixel px)
+{
+    uint16_t intensity;
+
+    intensity = (0.299 * px.r + 0.587 * px.g + 0.114 * px.b);
+
+    return intensity; // return intensity as a value
+}
+\end{lstlisting}
+Converting each pixel into ASCII characters depends on the intensity of each pixel and can be done by calculating index of the suitable:
+
+\begin{lstlisting}[language=c]
+char pixel_to_ascii(pixel px)
+{
+    static char ASCII_CHARS[] = " .,:;-=+*#%@";
+
+    uint16_t intensity, index;
+
+    intensity = pixel_intensity(px); // calculating intensity of the pixel
+
+    // defining Ascii length as the string length of ASCII characters minus 1
+    uint16_t ascii_length = strlen(ASCII_CHARS) - 1; 
+
+    index = intensity / 255.0 * (ascii_length); // calculating index
+
+    return ASCII_CHARS[index];
+}
+
+
+\end{lstlisting}
+
+\subsection{Video Initialization}
+
+\subsection{Frame Rendering}
+
+\subsection{Audio Extraction}
+
+
+
+
+% Section: Conclusion
+\section{Conclusion}
+
+% References
+\section*{References}
+\begin{enumerate}
+    \item Source code: \url{https://github.com/hulxv/asciivideo}
+    \item FFmpeg Documentation: \url{https://ffmpeg.org/documentation.html}
+    \item ncurses Documentation: \url{https://invisible-island.net/ncurses/}
+\end{enumerate}
+
+\end{document}
