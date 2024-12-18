@@ -174,9 +174,304 @@ char pixel_to_ascii(pixel px)
 
 \subsection{Frame Rendering}
 
+The frame is the buliding block of a video, as a video is just a mulitple frames played one after another very quickly.
+We began by giving each frame a unique id and specifying the line height of each frame. Then we define the width and height of the frames and provide each frame a buffer keeping its data.
+
+\newpage
+
+\begin{lstlisting}[language=c]
+typedef struct
+{
+    uint64_t id;
+    int wrap;
+    int width;
+    int height;
+    unsigned char *buf;
+} frame;
+\end{lstlisting}
+
+After defining the frame, we need to convert it to ASCII format and save it to the disk. And this happens by a function called $frame\_ascii\_write\_to$. This function converts each pixel in a frame to ASCII format.
+
+\begin{lstlisting}[language=c]
+int frame_ascii_write_to(frame *frame, char *filename)
+{
+    FILE *file = fopen(filename, "wb");
+
+    for (int y = 0; y < frame->height; y++)
+    {
+        for (int x = 0; x < frame->width; x++)
+        {
+            pixel px = pixel_new(
+                frame->buf[y * frame->wrap + x],
+                frame->buf[y * frame->wrap + x + 1],
+                frame->buf[y * frame->wrap + x + 2]);
+            char ascii_char = pixel_to_ascii(px);
+
+            fputc(ascii_char, file);
+            fputc(ascii_char, file);
+            fputc(ascii_char, file);
+        }
+        fputc('\n', file);
+    }
+
+    fclose(file);
+}
+\end{lstlisting}
 \subsection{Audio Extraction}
 
+\subsection{Specifications}
 
+Specifications is a structure designed to store data about a video. It holds various details such as
+
+\begin{enumerate}
+    \item \textbf{Frames Count:} The total number of frames in the video.
+    \item \textbf{Frames Per Second:} The playback speed, indicating how many frames are shown per second.
+    \item \textbf{Duration:} The total length of the video in seconds.
+    \item \textbf{Resolution:} The dimensions of the video in pixels.
+    \item \textbf{Audio:} A flag indicating whether the video includes an audio track.
+\end{enumerate}
+
+Here's how we defined the Specifications struct:
+\begin{lstlisting}[language=c]
+typedef struct
+{
+  uint32_t
+      frames_count; // the count of frames of the video that will be rendererd
+  double fps;       // Count of the frames that will be rendererd per second
+  double duration;  // Duration of the video in seconds
+  uint32_t width;
+  uint32_t height;
+  bool audio;
+} specs;
+\end{lstlisting}
+
+By encapsulating all important video properties in a single structure, specs structure provides an organized way to manage the data and this makes it easier to pass information between functions and to process.
+
+It also gives us the ability to serialize (convert the structure into a string) making it easy to save or transmit the video data. For example:
+\begin{itemize}
+    \item Save video data to a file for later use.
+    \item Send data to function needs a string to be faster.
+\end{itemize}
+
+\begin{lstlisting}[language=c]
+char *specs_serialize(specs *specifications)
+{
+    if (specifications == NULL)
+        return NULL;
+    int required_size = snprintf(NULL, 0, "%u,%.1f,%.1f,%u,%u", 
+                                    specifications->frames_count,
+                                    specifications->fps,
+                                    specifications->duration,
+                                    specifications->width,
+                                    specifications->height);
+    if (required_size < 0)
+    {
+        fprintf(stderr, "Error calculating required size\n");
+        return NULL;
+    }
+    char *buffer = (char *)malloc(required_size + 1);
+
+    if (buffer == NULL)
+    {
+        fprintf(stderr, "Memory allocation failed\n");
+        return NULL;
+    }
+    snprintf(buffer, required_size + 1, "%u,%.1f,%.1f,%u,%u", 
+                specifications->frames_count,
+                specifications->fps,
+                specifications->duration,
+                specifications->width,
+                specifications->height);
+    return buffer;
+}
+\end{lstlisting}
+After serializing, the deserialization process allows us to reconstruct the specs structure from a string.
+
+\begin{lstlisting}[language=c]
+specs *specs_deserialize(char *str)
+{
+    if (str == NULL)
+    {
+        return NULL;
+    }
+    // Allocate memory for the new specs object
+    specs *new_specs = (specs *)malloc(sizeof(specs));
+    if (new_specs == NULL)
+    {
+        fprintf(stderr, "Memory allocation failed\n");
+        return NULL;
+    }
+
+    // using sscanf to read values from the comma-separated string and store them in the corresponding fields of the specs structure
+    sscanf(str, "%u,%.1f,%f,%u,%u",
+        &new_specs->frames_count,
+        &new_specs->fps,
+        &new_specs->duration,
+        &new_specs->width,
+        &new_specs->height);
+
+    return new_specs;
+}
+\end{lstlisting}
+\subsection{Player}
+
+The Player is the most important part of the whole program as it's where we see and hear all of the work we've done so far.
+It takes the path to the generated frames and also the specifications. In addition, we play the audio as a child process. We store its parent id in the player.
+
+\begin{lstlisting}[language=c]
+typedef struct
+{
+    const char *src;
+    specs *specs;
+    pid_t audio_pid;
+} player;
+\end{lstlisting}
+
+The Player has control over the audio, as it can send either a \textbf{SIGSTOP} to pause the audio or a \textbf{SIGCONT} to resume it.
+
+\begin{lstlisting}[language=c]
+static void audio_stop(pid_t audio_pid)
+{
+    if (audio_pid > 0)
+    {
+        int result = kill(audio_pid, SIGSTOP);
+        if (result == -1)
+        {
+            ERROR("Failed to stop audio playback: %s", strerror(errno));
+        }
+        else
+        {
+            is_audio_stopped = true;
+        }
+    }
+}
+static void audio_resume(pid_t audio_pid)
+{
+    if (audio_pid > 0)
+    {
+        int result = kill(audio_pid, SIGCONT);
+        if (result == -1)
+        {
+            ERROR("Failed to resume audio playback: %s", strerror(errno));
+        }
+        else
+        {
+            is_audio_stopped = false;
+        }
+    }
+}
+\end{lstlisting}
+
+It also reads ASCII art frames from a file and displays them on an ncurses pad, erasing previous content.
+
+\begin{lstlisting}[language=c]
+static int print_frame(char *filename, WINDOW *frame_pad, int width, int height)
+{
+    FILE *file = fopen(filename, "r");
+    if (!file)
+    {
+        INFO("Error: Could not open file %s\n", filename);
+        return -1;
+    }
+
+    werase(frame_pad);
+    char line[width + 1];
+    for (int y = 0; y < height; y++)
+    {
+        if (fgets(line, sizeof(line), file) == NULL)
+            break;
+
+        mvwprintw(frame_pad, y, 0, "%.*s", width, line);
+    }
+
+    fclose(file);
+    return 0;
+}
+\end{lstlisting}
+
+We loops through frames to display them, synchronizes frame timing, and handles terminal resizing dynamically using a function called $player\_video\_run$
+
+\begin{lstlisting}[language=c]
+int player_video_run(player *player)
+
+{
+    double fps = ceil(player->specs->fps);
+    uint32_t frames_count = player->specs->frames_count;
+    uint32_t duration = player->specs->duration;
+
+    int delay = 1000000 / (2 * fps);
+
+    int width = player->specs->width * 4, height = player->specs->height;
+
+    INFO("Video dimensions: width = %i, height = %i\n", width, height);
+
+    int offset_y;
+    int offset_x;
+
+    int term_rows, term_cols;
+    int prev_term_rows, prev_term_cols;
+
+    getmaxyx(stdscr, prev_term_rows, prev_term_cols);
+    WINDOW *frame_pad = newpad(height, width);
+
+    if (!frame_pad)
+    {
+        ERROR(" Could not create frame pad\n");
+        return -1;
+    }
+
+    for (int i = 1; i <= player->specs->frames_count; i++)
+    {
+        werase(frame_pad);
+        do
+        {
+            getmaxyx(stdscr, term_rows, term_cols);
+
+            offset_y = (term_rows - height) / 2;
+            offset_x = (term_cols - width) / 2;
+
+            if (offset_y >= 0 && offset_x >= 0)
+            {
+                if (player->specs->audio)
+                audio_resume(player->audio_pid);
+                break;
+            }
+            else
+            {
+
+                clear();
+                mvprintw(term_rows / 2, (term_cols - 30) / 2, "Resize terminal to %dx%d", width, height);
+                mvprintw(term_rows / 2 + 1, (term_cols - 30) / 2, "Current: %dx%d", term_cols, term_rows);
+                refresh();
+
+                usleep(10000);
+                if (player->specs->audio)
+                audio_stop(player->audio_pid);
+            }
+        } while (1);
+
+        char filename[128];
+
+        snprintf(filename, sizeof(filename), "%s/%i.ascii", player->src, i);
+
+        print_frame(filename, frame_pad, width, height);
+        if (term_rows != prev_term_rows || term_cols != prev_term_cols)
+        {
+            clear();
+            refresh();
+        }
+        prefresh(frame_pad, 0, 0, offset_y, offset_x, offset_y + height - 1, offset_x + width - 1);
+
+        usleep(delay);
+
+        prev_term_rows = term_rows;
+        prev_term_cols = term_cols;
+    }
+
+    delwin(frame_pad);
+    return 0;
+}
+\end{lstlisting}
 
 
 % Section: Conclusion
