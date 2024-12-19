@@ -6,7 +6,12 @@
 \usepackage{xcolor} % For syntax highlighting
 \usepackage{hyperref} % For hyperlinks
 \usepackage{geometry} % For margin settings
+\usepackage{xcolor}
 \geometry{margin=0.7in}
+
+\usepackage{graphicx}
+\graphicspath{ {./assets/} }
+
 
 % Code formatting
 \lstset{
@@ -108,13 +113,23 @@ This is our idea, A tool that make you able to play your videos inside the termi
 
 % Section: Project Architecture
 \section{Project Architecture}
-The project consists of the following major components:
-\begin{enumerate}
-    \item \textbf{Video Initialization:} Initializes video file and streams using FFmpeg.
-    \item \textbf{Frame Rendering:} Uses ncurses to render ASCII frames in the terminal.
-    \item \textbf{Audio Extraction:} Extracts audio from the video and saves it as a separate file.
-    \item \textbf{Error Handling:} Ensures robust error management across all modules.
-\end{enumerate}
+
+The project architecture centers around transforming a video into an ASCII art animation while preserving audio playback. The process begins with decoding the input video, where the frames and audio are separated. The video frames are then converted into ASCII representations using a pixel intensity calculation. This intensity is derived from the RGB values of each pixel using the formula:
+
+$$I = 0.299 \times R + 0.587 \times G + 0.114 \times B$$
+
+The resulting intensity values are mapped to characters, ranging from lighter ones like \colorbox{lightgray}{\texttt{.}} and \colorbox{lightgray}{\textbf{:}} to darker, denser symbols such as \colorbox{lightgray}{\texttt{\#}} and \colorbox{lightgray}{\texttt{@}}. This creates a visual hierarchy where brighter parts of the frame appear ``lighter'' and darker regions use heavier symbols.\\
+
+While this ASCII conversion happens, the audio extracted earlier is handled separately. Both the audio and the ASCII frames are sent to a player component, which synchronizes their playback. The player ensures two critical things: the audio runs smoothly, and the frames are displayed sequentially without lag, creating the effect of an animated video.\\
+
+To achieve this synchronization, the system runs two threads. One thread is responsible for playing the extracted audio, while the other handles the display of ASCII frames in real time. The overall result is a cohesive ASCII-based video playback experience, complete with audio.\\
+
+\begin{figure*}
+    
+    \centering
+    \includegraphics*[scale=0.2]{Arch}
+\end{figure*}
+
 
 
 % Section: Code Explanation
@@ -134,7 +149,7 @@ typedef struct
     uint16_t b;
 } pixel;
 \end{lstlisting}
-
+\newpage
 Now, We can do the important operations that we need. In first, We need to calculate the intensity level of this pixel to select the suitable ASCII character for it using this formula:
 $$I = 0.299*R + 0.587*G + 0.114*B$$ 
 
@@ -170,14 +185,12 @@ char pixel_to_ascii(pixel px)
 
 \end{lstlisting}
 
-\subsection{Video Initialization}
 
-\subsection{Frame Rendering}
+\subsection{The Frame, What we see}
 
 The frame is the buliding block of a video, as a video is just a mulitple frames played one after another very quickly.
 We began by giving each frame a unique id and specifying the line height of each frame. Then we define the width and height of the frames and provide each frame a buffer keeping its data.
 
-\newpage
 
 \begin{lstlisting}[language=c]
 typedef struct
@@ -189,6 +202,7 @@ typedef struct
     unsigned char *buf;
 } frame;
 \end{lstlisting}
+\newpage
 
 After defining the frame, we need to convert it to ASCII format and save it to the disk. And this happens by a function called $frame\_ascii\_write\_to$. This function converts each pixel in a frame to ASCII format.
 
@@ -217,7 +231,319 @@ int frame_ascii_write_to(frame *frame, char *filename)
     fclose(file);
 }
 \end{lstlisting}
+
+\subsection{Video decoding}
+After a lot of abstractions, We will start in our first step, The video decoding. We use $libavcodec$ for this operation, it's a famous library, and it's used in a lot of video editors programs like $kdenlive$. Also, the famous tool in videos, $FFmpeg$.\\ 
+
+We will define our struct to start decoding that contains important stored data for this operation.
+
+\begin{lstlisting}[language=c]
+typedef struct
+{
+    const char *src, *out;
+    AVFormatContext *fmt_ctx;
+    const AVCodec *codec;
+    AVCodecContext *codec_ctx;
+    AVStream *video_stream;
+    AVStream *audio_stream;
+    int video_stream_index;
+    int audio_stream_index;
+    AVPacket *pkt;
+    AVFrame *frame;
+} video;
+\end{lstlisting}
+
+\newpage
+Now, We will need to initilize this struct 
+\begin{lstlisting}[language=c]
+video *video_new(const char *src, const char *out)
+{
+    video *vid = malloc(sizeof(video));
+
+    vid->src = src;
+    vid->out = out;
+    vid->fmt_ctx = NULL;
+    vid->codec = NULL;
+    vid->codec_ctx = NULL;
+    vid->video_stream = NULL;
+    vid->audio_stream = NULL;
+    vid->video_stream_index = -1;
+    vid->audio_stream_index = -1;
+    vid->pkt = NULL;
+    vid->frame = NULL;
+
+    if (avformat_open_input(&vid->fmt_ctx, vid->src, NULL, NULL) < 0)
+    {
+        ERROR("Could not open input file\n");
+        goto fail;
+    }
+
+    if (avformat_find_stream_info(vid->fmt_ctx, NULL) < 0)
+    {
+        ERROR("Could not find stream information\n");
+        goto fail;
+    }
+
+    if (video_set_streams(vid) == -1)
+    {
+        ERROR("Couldn't find video stream.");
+        goto fail;
+    }
+
+    if (video_find_decoder(vid) == -1)
+    {
+        ERROR("Could not find the decoder");
+        goto fail;
+    }
+
+    INFO("Decoder was found, dec={%s}, type={%u}", vid->codec->long_name, vid->codec_ctx->codec_type);
+    vid->frame = av_frame_alloc();
+    vid->pkt = av_packet_alloc();
+    if (!vid->frame || !vid->pkt)
+    {
+        ERROR("Could not allocate frame or packet\n");
+        goto fail;
+    }
+
+    return vid;
+
+fail:
+    ERROR("Couldn't create the video struct");
+    return NULL;
+}
+\end{lstlisting}
+
+\newpage
+As you notice, we set the streams during this initilization using $video\_set\_streams$, that making a loop to find the video and audio streams
+
+\begin{lstlisting}[language=c]
+static int video_set_streams(video *vid)
+{
+    for (unsigned int i = 0; i < vid->fmt_ctx->nb_streams; i++)
+    {
+        if (vid->fmt_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+        {
+            vid->video_stream_index = i;
+            vid->video_stream = vid->fmt_ctx->streams[i];
+            INFO("video stream was found, i={%i}", vid->video_stream_index);
+        }
+    }
+
+    if (vid->video_stream_index == -1)
+    {
+        return -1;
+    }
+    return 0;
+}    
+\end{lstlisting}
+
+and find the decoder using $video\_find\_decoder$
+\begin{lstlisting}[language=c]
+static int video_find_decoder(video *vid)
+{
+    vid->codec = avcodec_find_decoder(vid->video_stream->codecpar->codec_id);
+    if (vid->codec == NULL)
+    {
+        ERROR("Codec not found");
+        return -1;
+    }
+
+    vid->codec_ctx = avcodec_alloc_context3(vid->codec);
+    if (vid->codec_ctx == NULL)
+    {
+        ERROR("Could not allocate codec context");
+        return -1;
+    }
+
+    // Copy codec parameters from the input stream to the codec context
+    if (avcodec_parameters_to_context(vid->codec_ctx, vid->video_stream->codecpar) < 0)
+    {
+        ERROR("Could not copy codec parameters to context");
+        return -1;
+    }
+
+    // Open codec
+    if (avcodec_open2(vid->codec_ctx, vid->codec, NULL) < 0)
+    {
+        ERROR("Could not open codec");
+        return -1;
+    }
+    else
+    {
+        INFO("Codec was opened");
+    }
+
+    return 0;
+}
+    
+\end{lstlisting}
+
+Finally, We will need to decode the video. For that, We make a function that deocde it with passing a hundler that handles the decoding operation
+\begin{lstlisting}[language=c]
+int video_decode_frames(video *vid, int (*handler)(AVCodecContext *codec_ctx, AVFrame *frame, AVPacket *pkt, AVFormatContext *fmt_ctx, AVStream *video_stream, const char *out))
+{
+
+    // Read frames from the file
+    while (av_read_frame(vid->fmt_ctx, vid->pkt) >= 0)
+    {
+        if (vid->pkt->stream_index == vid->video_stream_index)
+        {
+            if (handler(vid->codec_ctx, vid->frame, vid->pkt, vid->fmt_ctx, vid->video_stream, vid->out) == -1)
+            {
+                FATAL("Couldn't handle the frame #%i", vid->codec_ctx->frame_num);
+                goto fail;
+            }
+        }
+        av_packet_unref(vid->pkt);
+    }
+    return 0;
+
+fail:
+    return -1;
+}    
+\end{lstlisting}
+
+\subsection{It seems all are ready. Let's generate ASCII Frames!}
+We will start with defining a struct for that that contains the video source, and output directory, and the video struct to decode it.
+\begin{lstlisting}[language=c]
+typedef struct
+{
+    const char  *src;
+    const char  *dest;
+          video *vid;
+} ascii_video_gen;
+\end{lstlisting}
+
+Now, Let's generate the video. It's a simple function runs the generator 
+\begin{lstlisting}[language=c]
+int ascii_video_gen_run(ascii_video_gen *gen)
+{
+    video_decode_frames(gen->vid, decode_handler);
+
+    // Flush the decoder
+    decode_handler(gen->vid->codec_ctx, gen->vid->frame, NULL, gen->vid->fmt_ctx, gen->vid->video_stream, gen->dest);
+    return 0;
+}
+\end{lstlisting}
+\newpage
+What's $deocde\_handler$ ? As we talk in video decoding, We need to pass a decoding handler to $video\_decode\_frames$ to convert the video frames into ASCII format. 
+
+\begin{lstlisting}[language=c]
+
+int decode_handler(AVCodecContext *dec_ctx, AVFrame *av_frame, AVPacket *av_pkt, AVFormatContext *av_fmt_ctx, AVStream *av_video_stream, const char *out_dir)
+{
+    char buf[1024];
+    int ret;
+    ret = avcodec_send_packet(dec_ctx, av_pkt);
+    if (ret < 0)
+    {
+        ERROR("Error sending a packet for decoding, ret={%i}", ret);
+        return -1;
+    }
+
+    AVRational framerate =
+        av_guess_frame_rate(av_fmt_ctx, av_video_stream, av_frame);
+
+    double fps = framerate.num / framerate.den;
+    double duration = av_fmt_ctx->duration / (double)AV_TIME_BASE;
+    int frames_count = fps * duration;
+
+    while (ret >= 0)
+    {
+        ret = avcodec_receive_frame(dec_ctx, av_frame);
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
+            goto done;
+        else if (ret < 0)
+        {
+            ERROR("Error during decoding");
+            return -1;
+        }
+
+        int frame_n = dec_ctx->frame_num;
+        int w = av_frame->width, h = av_frame->height;
+        snprintf(buf, sizeof(buf), "%s/%ld.ascii", out_dir, frame_n);
+
+        INFO("(%.1f\%) Saving frame %ld/%ld: path={\"%s\"}, res={%ix%i}", frame_n / (float)frames_count * 100, frame_n, frames_count, buf, av_frame->width, av_frame->height);
+
+        frame *fm = frame_new(frame_n, av_frame->data[0], av_frame->linesize[0], w, h);
+
+        if (!fm)
+        {
+            ERROR("Creating frame#%i was failed", dec_ctx->frame_num);
+        }
+
+        if (frame_ascii_write_to(fm, buf) == -1)
+        {
+            ERROR("Couldn't write frame <%i> into %s", dec_ctx->frame_num, buf);
+            return -1;
+        }
+        frame_free(fm);
+    }
+done:
+    return 0;
+}    
+\end{lstlisting}
+
 \subsection{Audio Extraction}
+
+Alright, We converted the video into ASCII. Now, We need to hear something. For that, the Audio extraction is important to play the sound with the video. This happens using $FFmpeg$ tool by run it as child process.
+\begin{lstlisting}[language=c]
+int video_extract_audio(video *vid, const char *output_file)
+{
+    if (!vid || !vid->src || !output_file)
+    {
+        ERROR("Invalid input parameters");
+        return -1;
+    }
+
+    pid_t pid = fork();
+    if (pid == -1)
+    {
+        ERROR("Failed to fork process");
+        return -1;
+    }
+    else if (pid == 0)
+    {
+        execl("/usr/bin/ffmpeg",
+              "ffmpeg",               // argv[0]
+              "-i", vid->src,         // input file
+              "-vn",                  // no video
+              "-acodec", "pcm_s16le", // PCM 16-bit little-endian
+              "-ar", "44100",         // 44.1kHz sample rate
+              "-ac", "2",             // 2 audio channels
+              output_file,            // output file
+              NULL);
+
+        ERROR("Failed to execute ffmpeg");
+        exit(EXIT_FAILURE);
+    }
+    else
+    {
+        int status;
+        waitpid(pid, &status, 0);
+        if (WIFEXITED(status))
+        {
+            int exit_status = WEXITSTATUS(status);
+            if (exit_status == 0)
+            {
+                INFO("Audio extraction successful");
+                return 0;
+            }
+            else
+            {
+                ERROR("FFmpeg process failed with exit code %d", exit_status);
+                return -1;
+            }
+        }
+        else
+        {
+            ERROR("FFmpeg process did not exit normally");
+            return -1;
+        }
+    }
+}
+\end{lstlisting}
+
 
 \subsection{Specifications}
 
@@ -235,84 +561,17 @@ Here's how we defined the Specifications struct:
 \begin{lstlisting}[language=c]
 typedef struct
 {
-  uint32_t
-      frames_count; // the count of frames of the video that will be rendererd
-  double fps;       // Count of the frames that will be rendererd per second
-  double duration;  // Duration of the video in seconds
-  uint32_t width;
-  uint32_t height;
-  bool audio;
+  uint32_t   frames_count;
+  double     fps;       
+  double     duration;  
+  uint32_t   width;
+  uint32_t   height;
+  bool       audio;
 } specs;
 \end{lstlisting}
 
-By encapsulating all important video properties in a single structure, specs structure provides an organized way to manage the data and this makes it easier to pass information between functions and to process.
 
-It also gives us the ability to serialize (convert the structure into a string) making it easy to save or transmit the video data. For example:
-\begin{itemize}
-    \item Save video data to a file for later use.
-    \item Send data to function needs a string to be faster.
-\end{itemize}
 
-\begin{lstlisting}[language=c]
-char *specs_serialize(specs *specifications)
-{
-    if (specifications == NULL)
-        return NULL;
-    int required_size = snprintf(NULL, 0, "%u,%.1f,%.1f,%u,%u", 
-                                    specifications->frames_count,
-                                    specifications->fps,
-                                    specifications->duration,
-                                    specifications->width,
-                                    specifications->height);
-    if (required_size < 0)
-    {
-        fprintf(stderr, "Error calculating required size\n");
-        return NULL;
-    }
-    char *buffer = (char *)malloc(required_size + 1);
-
-    if (buffer == NULL)
-    {
-        fprintf(stderr, "Memory allocation failed\n");
-        return NULL;
-    }
-    snprintf(buffer, required_size + 1, "%u,%.1f,%.1f,%u,%u", 
-                specifications->frames_count,
-                specifications->fps,
-                specifications->duration,
-                specifications->width,
-                specifications->height);
-    return buffer;
-}
-\end{lstlisting}
-After serializing, the deserialization process allows us to reconstruct the specs structure from a string.
-
-\begin{lstlisting}[language=c]
-specs *specs_deserialize(char *str)
-{
-    if (str == NULL)
-    {
-        return NULL;
-    }
-    // Allocate memory for the new specs object
-    specs *new_specs = (specs *)malloc(sizeof(specs));
-    if (new_specs == NULL)
-    {
-        fprintf(stderr, "Memory allocation failed\n");
-        return NULL;
-    }
-
-    // using sscanf to read values from the comma-separated string and store them in the corresponding fields of the specs structure
-    sscanf(str, "%u,%.1f,%f,%u,%u",
-        &new_specs->frames_count,
-        &new_specs->fps,
-        &new_specs->duration,
-        &new_specs->width,
-        &new_specs->height);
-
-    return new_specs;
-}
-\end{lstlisting}
 \subsection{Player}
 
 The Player is the most important part of the whole program as it's where we see and hear all of the work we've done so far.
@@ -326,7 +585,7 @@ typedef struct
     pid_t audio_pid;
 } player;
 \end{lstlisting}
-
+\newpage
 The Player has control over the audio, as it can send either a \textbf{SIGSTOP} to pause the audio or a \textbf{SIGCONT} to resume it.
 
 \begin{lstlisting}[language=c]
@@ -389,100 +648,231 @@ static int print_frame(char *filename, WINDOW *frame_pad, int width, int height)
 }
 \end{lstlisting}
 
-We loops through frames to display them, synchronizes frame timing, and handles terminal resizing dynamically using a function called $player\_video\_run$
+\newpage
+We loops through frames to display them, synchronizes frame timing, and handles terminal resizing dynamically using a function called $player\_video\_run$.\\
+
+In this function, We will start with specify some information important to render the frames like $delay$, terminal dimensions, frame dimensions, offset to make the video at the center, etc.
 
 \begin{lstlisting}[language=c]
-int player_video_run(player *player)
+double fps = ceil(player->specs->fps);
+uint32_t frames_count = player->specs->frames_count;
+uint32_t duration = player->specs->duration;
 
+int delay = 1000000 / (2 * fps);
+
+int width = player->specs->width * 4, height = player->specs->height;
+
+INFO("Video dimensions: width = %i, height = %i\n", width, height);
+
+int offset_y;
+int offset_x;
+
+int term_rows, term_cols;
+int prev_term_rows, prev_term_cols;
+
+getmaxyx(stdscr, prev_term_rows, prev_term_cols);
+WINDOW *frame_pad = newpad(height, width);
+if (!frame_pad)
 {
-    double fps = ceil(player->specs->fps);
-    uint32_t frames_count = player->specs->frames_count;
-    uint32_t duration = player->specs->duration;
-
-    int delay = 1000000 / (2 * fps);
-
-    int width = player->specs->width * 4, height = player->specs->height;
-
-    INFO("Video dimensions: width = %i, height = %i\n", width, height);
-
-    int offset_y;
-    int offset_x;
-
-    int term_rows, term_cols;
-    int prev_term_rows, prev_term_cols;
-
-    getmaxyx(stdscr, prev_term_rows, prev_term_cols);
-    WINDOW *frame_pad = newpad(height, width);
-
-    if (!frame_pad)
-    {
-        ERROR(" Could not create frame pad\n");
-        return -1;
-    }
-
-    for (int i = 1; i <= player->specs->frames_count; i++)
-    {
-        werase(frame_pad);
-        do
-        {
-            getmaxyx(stdscr, term_rows, term_cols);
-
-            offset_y = (term_rows - height) / 2;
-            offset_x = (term_cols - width) / 2;
-
-            if (offset_y >= 0 && offset_x >= 0)
-            {
-                if (player->specs->audio)
-                audio_resume(player->audio_pid);
-                break;
-            }
-            else
-            {
-
-                clear();
-                mvprintw(term_rows / 2, (term_cols - 30) / 2, "Resize terminal to %dx%d", width, height);
-                mvprintw(term_rows / 2 + 1, (term_cols - 30) / 2, "Current: %dx%d", term_cols, term_rows);
-                refresh();
-
-                usleep(10000);
-                if (player->specs->audio)
-                audio_stop(player->audio_pid);
-            }
-        } while (1);
-
-        char filename[128];
-
-        snprintf(filename, sizeof(filename), "%s/%i.ascii", player->src, i);
-
-        print_frame(filename, frame_pad, width, height);
-        if (term_rows != prev_term_rows || term_cols != prev_term_cols)
-        {
-            clear();
-            refresh();
-        }
-        prefresh(frame_pad, 0, 0, offset_y, offset_x, offset_y + height - 1, offset_x + width - 1);
-
-        usleep(delay);
-
-        prev_term_rows = term_rows;
-        prev_term_cols = term_cols;
-    }
-
-    delwin(frame_pad);
-    return 0;
+    ERROR(" Could not create frame pad\n");
+    return -1;
 }
 \end{lstlisting}
 
+After that, we will enter the displaying frames loop by printing each frame file into the $frame\_pad$.
 
-% Section: Conclusion
-\section{Conclusion}
+\begin{lstlisting}[language=c]
+for (int i = 1; i <= player->specs->frames_count; i++)
+{ 
+    char filename[128];
+
+    snprintf(filename, sizeof(filename), "%s/%i.ascii", player->src, i);
+    print_frame(filename, frame_pad, width, height);
+    if (term_rows != prev_term_rows || term_cols != prev_term_cols)
+    {
+        clear();
+        refresh();
+    }
+    prefresh(frame_pad, 0, 0, offset_y, offset_x, offset_y + height - 1, offset_x + width - 1);
+
+    usleep(delay);
+    prev_term_rows = term_rows;
+    prev_term_cols = term_cols;
+}
+\end{lstlisting}
+\newpage
+but Before printing the frame, we need to check if the dimensions of the terminal suits video dimensions or will ask the user to resize the terminal 
+\begin{lstlisting}[language=c]
+do
+{
+    getmaxyx(stdscr, term_rows, term_cols);
+
+    offset_y = (term_rows - height) / 2;
+    offset_x = (term_cols - width) / 2;
+
+    if (offset_y >= 0 && offset_x >= 0)
+    {
+        if (player->specs->audio)
+        audio_resume(player->audio_pid);
+        break;
+    }
+    else
+    {
+
+        clear();
+        mvprintw(term_rows / 2, (term_cols - 30) / 2, "Resize terminal to %dx%d", width, height);
+        mvprintw(term_rows / 2 + 1, (term_cols - 30) / 2, "Current: %dx%d", term_cols, term_rows);
+        refresh();
+
+        usleep(10000);
+        if (player->specs->audio)
+        audio_stop(player->audio_pid);
+    }
+} while (1);
+\end{lstlisting}
+
+Now, We need to play the audio that we extracted by creating a child process, $aplay$, a command line sound player.
+\begin{lstlisting}[language=c]
+int player_audio_run(player *player)
+{
+    char audio_file[1024];
+    snprintf(audio_file, sizeof(audio_file), "%s/audio.wav", player->src);
+    player->audio_pid = fork();
+
+    if (player->audio_pid == -1)
+    {
+        ERROR("Failed to fork process");
+        return -1;
+    }
+    else if (player->audio_pid == 0)
+    {
+        execl("/usr/bin/aplay",
+              "aplay",    // argv[0]
+              "-q",       // quiet mode (suppress output)
+              audio_file, // audio file to play
+              NULL);
+        ERROR("Failed to execute aplay"); exit(EXIT_FAILURE);
+    }
+    else
+    {
+        int status;
+        waitpid(player->audio_pid, &status, 0);
+        // Some Error Handling...
+    }
+}
+
+
+\end{lstlisting}
+
+\subsection{Let's combine all together!}
+In the main funciton, we receive process arguments for video source and output directory, create the video struct, generate the ASCII video, extract the audio, and specifications.
+
+\begin{lstlisting}[language=c]
+ const char *src, *out;
+
+if (argc <= 2)
+{
+    fprintf(stderr, "Usage: %s <input file> <output file>\n", argv[0]);
+    exit(0);
+}
+src = argv[1];
+out = argv[2];
+
+video *vid = video_new(src, out);
+
+ascii_video_gen *gen = ascii_viden_gen_new(src, out, vid);
+ascii_video_gen_run(gen);
+
+char buf[128];
+snprintf(buf, sizeof(buf), "%s/audio.wav", out);
+int audio_ext_ret = video_extract_audio(vid, buf);
+if (audio_ext_ret != 0)
+{
+    ERROR("Couldn't extract the audio and play it.");
+}
+AVRational framerate =
+    av_guess_frame_rate(vid->fmt_ctx, vid->video_stream, vid->frame);
+
+double fps = framerate.num / framerate.den;
+double duration = vid->fmt_ctx->duration / (double)AV_TIME_BASE;
+
+int frames_count = fps * duration;
+specs *specs = specs_new(frames_count, fps, duration, vid->video_stream->codecpar->width, vid->video_stream->codecpar->height, audio_ext_ret == 0 ? true : false);
+\end{lstlisting}
+
+\newpage
+
+
+Now we will run the player and audio together using multi-threading by create a thread for each one and creating a routine function that wrap the main function to pass it to the thread creator
+
+\begin{lstlisting}[language=c]
+void *audio_routine(void *p)
+{
+    return (void *)player_audio_run((player *)p);
+}
+void *video_routine(void *p)
+{
+    return (void *)player_video_run((player *)p);
+}    
+\end{lstlisting}
+
+\begin{lstlisting}[language=c]
+player *player = player_new(out, specs);
+
+pthread_t th_video;
+pthread_t th_audio;
+
+void *ret_audio, *ret_video;
+
+pthread_create(&th_video, NULL, video_routine, (void *)player);
+audio_ext_ret == 0 &&
+    pthread_create(&th_audio, NULL, audio_routine, (void *)player);
+
+pthread_join(th_video, &ret_video);
+
+audio_ext_ret == 0 &&
+    pthread_join(th_audio, &ret_audio);
+
+if ((int)ret_video == -1)
+{
+    ERROR("player failed to play the video");
+} 
+\end{lstlisting}
+
 
 % References
-\section*{References}
+\section{References}
 \begin{enumerate}
     \item Source code: \url{https://github.com/hulxv/asciivideo}
     \item FFmpeg Documentation: \url{https://ffmpeg.org/documentation.html}
     \item ncurses Documentation: \url{https://invisible-island.net/ncurses/}
+    \item asciiart.eu: \url{https://www.asciiart.eu}
 \end{enumerate}
 
+
+\newpage
+
+\section{Team}
+\begin{quote}
+    
+    We completed this project with teamworking and using $git$ as a version control system to work together and make a plan to done our work.
+\end{quote}
+
+    
+    % Please add the following required packages to your document preamble:
+% \usepackage{booktabs}
+\begin{table}[]
+    \centering
+    \Large
+\begin{tabular}{@{}lc@{}}
+\multicolumn{1}{c}{Name}       & Secion \\ 
+\hline
+Mohamed Emad Elsawy            & 2      \\
+Mahmoud Fathallah AbdelFatah   & 2      \\
+Mostafa Ahmed Abdelsalam Morsi & 2      \\
+Mohamed Mahmoud Ramadan        & 2      \\
+Eyad Eslam Eltaher             & 1      \\ 
+\end{tabular}
+\end{table}
+    
 \end{document}
