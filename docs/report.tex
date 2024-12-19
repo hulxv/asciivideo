@@ -84,7 +84,7 @@
 
 % Section: Introduction
 \section{Introduction}
-ASCII art is a graphic design technique that uses computers for presentation and consists of pictures pieced together from the 95 printable (from a total of 128) characters defined by the ASCII Standard from 1963 and ASCII compliant character sets with proprietary extended characters (beyond the 128 characters of standard 7-bit ASCII)
+ASCII art is a graphic design technique that uses computers for presentation and it consists of pictures pieced together from the 95 printable (from a total of 128) characters defined by the ASCII Standard from 1963 and ASCII compliant character sets with proprietary extended characters (beyond the 128 characters of standard 7-bit ASCII)
 
 \begin{lstlisting}[caption={An ASCII art for Ant bear from https://www.asciiart.eu/animals/aardvarks}]
             ,
@@ -137,9 +137,9 @@ To achieve this synchronization, the system runs two threads. One thread is resp
 Here, We will talk about the parts of our project and how it works behind the scenes.
 
 \subsection{Pixel, The Atom of what we see}
-Pixel is the smallest unit of the frame of image or video that we see and the most important thing in the frame, everything in the frame contains pixel beginning from the text to the smallest drop seen in the photo. \\
+Pixel is the smallest unit of the frame of image or video that we see and the most important thing in the frame, everything in the frame contains pixels beginning from the text to the smallest drop seen in the photo. \\
 
-To work with this concept in C, we need to abstract it by make a struct for it contains the important data about it. Struct pixel is used to represent RGB colors in 16-bit unsigned int representing red (r), green (g) and blue (r) colors.
+To work with this concept in C, we need to abstract it by making a struct for it containing the important data about it. Struct pixel is used to represent RGB colors in 16-bit unsigned int representing red (r), green (g) and blue (r) colors.
 
 \begin{lstlisting}[language=c] 
 typedef struct
@@ -188,8 +188,8 @@ char pixel_to_ascii(pixel px)
 
 \subsection{The Frame, What we see}
 
-The frame is the buliding block of a video, as a video is just a mulitple frames played one after another very quickly.
-We began by giving each frame a unique id and specifying the line height of each frame. Then we define the width and height of the frames and provide each frame a buffer keeping its data.
+The frame is the buliding block of a video, as a video is just a multiple frames played one after another very quickly.
+We begin by giving each frame a unique id and specifying the line height of each frame. Then we define the width and height of the frames and provide each frame a buffer keeping its data.
 
 
 \begin{lstlisting}[language=c]
@@ -314,7 +314,7 @@ fail:
 \end{lstlisting}
 
 \newpage
-As you notice, we set the streams during this initilization using $video\_set\_streams$, that making a loop to find the video and audio streams
+As you notice, we set the streams during this initilization using $video\_set\_streams$, making a loop to find the video and audio streams
 
 \begin{lstlisting}[language=c]
 static int video_set_streams(video *vid)
@@ -378,7 +378,7 @@ static int video_find_decoder(video *vid)
     
 \end{lstlisting}
 
-Finally, We will need to decode the video. For that, We make a function that deocde it with passing a hundler that handles the decoding operation
+Finally, We will need to decode the video. For that, We make a function that decodes it by passing a handler that handles the decoding operation
 \begin{lstlisting}[language=c]
 int video_decode_frames(video *vid, int (*handler)(AVCodecContext *codec_ctx, AVFrame *frame, AVPacket *pkt, AVFormatContext *fmt_ctx, AVStream *video_stream, const char *out))
 {
@@ -404,7 +404,7 @@ fail:
 \end{lstlisting}
 
 \subsection{It seems all are ready. Let's generate ASCII Frames!}
-We will start with defining a struct for that that contains the video source, and output directory, and the video struct to decode it.
+We will start with defining a struct for that that contains the video source, output directory, and the video struct to decode it.
 \begin{lstlisting}[language=c]
 typedef struct
 {
@@ -414,7 +414,7 @@ typedef struct
 } ascii_video_gen;
 \end{lstlisting}
 
-Now, Let's generate the video. It's a simple function runs the generator 
+Now, Let's generate the video. It's a simple function that runs the generator. 
 \begin{lstlisting}[language=c]
 int ascii_video_gen_run(ascii_video_gen *gen)
 {
@@ -426,7 +426,7 @@ int ascii_video_gen_run(ascii_video_gen *gen)
 }
 \end{lstlisting}
 \newpage
-What's $deocde\_handler$ ? As we talk in video decoding, We need to pass a decoding handler to $video\_decode\_frames$ to convert the video frames into ASCII format. 
+What's $deocde\_handler$ ? As we talked in video decoding, We need to pass a decoding handler to $video\_decode\_frames$ to convert the video frames into ASCII format. 
 
 \begin{lstlisting}[language=c]
 
@@ -486,7 +486,7 @@ done:
 
 \subsection{Audio Extraction}
 
-Alright, We converted the video into ASCII. Now, We need to hear something. For that, the Audio extraction is important to play the sound with the video. This happens using $FFmpeg$ tool by run it as child process.
+Alright, We converted the video into ASCII. Now, We need to hear something. For that, the Audio extraction is important to play the sound with the video. This happens using $FFmpeg$ tool by running it as a child process.
 \begin{lstlisting}[language=c]
 int video_extract_audio(video *vid, const char *output_file)
 {
@@ -649,9 +649,9 @@ static int print_frame(char *filename, WINDOW *frame_pad, int width, int height)
 \end{lstlisting}
 
 \newpage
-We loops through frames to display them, synchronizes frame timing, and handles terminal resizing dynamically using a function called $player\_video\_run$.\\
+We loops through frames to display them, synchronize frame timing, and handle terminal resizing dynamically using a function called $player\_video\_run$.\\
 
-In this function, We will start with specify some information important to render the frames like $delay$, terminal dimensions, frame dimensions, offset to make the video at the center, etc.
+In this function, We will start with specifying some information important to render the frames like $delay$, terminal dimensions, frame dimensions, offset to make the video at the center, etc.
 
 \begin{lstlisting}[language=c]
 double fps = ceil(player->specs->fps);
@@ -701,7 +701,7 @@ for (int i = 1; i <= player->specs->frames_count; i++)
 }
 \end{lstlisting}
 \newpage
-but Before printing the frame, we need to check if the dimensions of the terminal suits video dimensions or will ask the user to resize the terminal 
+but Before printing the frame, we need to check if the dimensions of the terminal suits video dimensions or will ask the user to resize the terminal. 
 \begin{lstlisting}[language=c]
 do
 {
@@ -803,7 +803,7 @@ specs *specs = specs_new(frames_count, fps, duration, vid->video_stream->codecpa
 \newpage
 
 
-Now we will run the player and audio together using multi-threading by create a thread for each one and creating a routine function that wrap the main function to pass it to the thread creator
+Now we will run the player and audio together using multi-threading by creating a thread for each one and creating a routine function that wraps the main function to pass it to the thread creator.
 
 \begin{lstlisting}[language=c]
 void *audio_routine(void *p)
@@ -861,7 +861,7 @@ if ((int)ret_video == -1)
     
     % Please add the following required packages to your document preamble:
 % \usepackage{booktabs}
-\begin{table}[]
+\begin{table}[h!]
     \centering
     \Large
 \begin{tabular}{@{}lc@{}}
