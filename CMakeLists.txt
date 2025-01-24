@@ -39,7 +39,7 @@ if(WIN32)
     target_link_directories(asciivideo PRIVATE ${FFMPEG_LIBRARY_DIR})
     target_link_libraries(asciivideo ${FFMPEG_LIBRARIES})
 else()
-    target_link_libraries(asciivideo ${FFMPEG_LIBRARIES} ${CURSES_LIBRARIES})
+    target_link_libraries(asciivideo ${FFMPEG_LIBRARIES} ${CURSES_LIBRARIES} m)
 endif()
 
 # Install rules (optional)

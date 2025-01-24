@@ -33,14 +33,25 @@ Before , ensure that you have the following installed on your system:
    git clone https://github.com/hulxv/asciivideo.git && cd asciivideo
    ```
 
-2. **Build the Project**:
+2. **Install required libraries**
+- pkg-config 
+- libavcodec-dev 
+- libavdevice-dev
+- libavfilter-dev 
+- libavformat-dev 
+- libavutil-dev 
+- libswresample-dev 
+- libswscale-dev
+- libncurses5-dev
+
+3. **Build the Project**:
 
    ```bash
    cmake .
    cmake --build .
    ```
 
-3. **Install the Executable**:
+4. **Install the Executable**:
 
    ```bash
    sudo make install
