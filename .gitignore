@@ -42,3 +42,10 @@ CTestTestfile.cmake
 asciivideo*
 out
 Makefile
+
+*.ascii
+.cache
+test
+*.mp4
+*.wav
+specsfile
