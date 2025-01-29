@@ -34,15 +34,9 @@ Before , ensure that you have the following installed on your system:
    ```
 
 2. **Install required libraries**
-- pkg-config 
-- libavcodec-dev 
-- libavdevice-dev
-- libavfilter-dev 
-- libavformat-dev 
-- libavutil-dev 
-- libswresample-dev 
-- libswscale-dev
-- libncurses5-dev
+   ```
+   pkg-config libavcodec-dev libavdevice-devlibavfilter-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev libncurses5-dev
+   ```
 
 3. **Build the Project**:
 
@@ -62,7 +56,8 @@ Before , ensure that you have the following installed on your system:
 To play a video in ASCII format, run the following command:
 
 ```bash
-asciivideo /path/to/your/video.mp4
+asciivideo -g <video-src> <ascii-dir>  # Generate ASCII art from video and save to <out>.
+asciivideo -p <ascii-dir>              # Play ASCII art from <src-dir>.
 ```
 
 Replace `/path/to/your/video.mp4` with the actual path to the video file you wish to play.
