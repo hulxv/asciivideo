@@ -32,12 +32,18 @@ specs *specs_new(uint64_t frames_count, double fps, double duration, uint32_t wi
  *  assert(strcmp(specs_as_str, "1000,30,3043.0,320,200"))
  */
 
-char *specs_serialize(specs *specifications);
+char *specs_serialize(specs *s);
 
 /*
  * Convert the string into struct depend on previous schema:
  *  "frames_count,fps,duration,width,height"
+ * 
+ *  * It will return NULL if it couldn't parse the string according to invalid schema.
  */
 specs *specs_deserialize(char *str);
+
+int specs_write_to(specs *s, char *dest_dir);
+
+specs *specs_read_from(char *src_dir);
 
 #endif

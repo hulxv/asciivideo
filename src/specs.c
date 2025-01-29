@@ -5,20 +5,18 @@
 #include "specs.h"
 #include "helpers.h"
 
-/*The specs_new function will allocate memory
-for a new specs structure and initialize it with the provided values*/
+const char *SPECS_FILE_NAME = "specsfile";
+
 specs *specs_new(uint64_t frames_count, double fps, double duration, uint32_t width, uint32_t height, bool audio)
 {
-    // dynamic memory allocation for new_specs structre
-    specs *new_specs = (specs *)malloc(sizeof(specs)); // pointer to structure
+    specs *new_specs = (specs *)malloc(sizeof(specs));
 
-    // check if memory allocation was successful
     if (new_specs == NULL)
     {
-        fprintf(stderr, "Memory allocation failed\n"); // fprintf function writes the string to the file.txt
+        fprintf(stderr, "Memory allocation failed\n");
         return NULL;
     }
-    // Initialization the fields of the  (specs_new) structure
+
     new_specs->frames_count = frames_count;
     new_specs->fps = fps;
     new_specs->duration = duration;
@@ -26,58 +24,51 @@ specs *specs_new(uint64_t frames_count, double fps, double duration, uint32_t wi
     new_specs->height = height;
     new_specs->audio = audio;
     return new_specs;
-    // free(new_specs);
 }
 
-// Serialize and convert the struct into string
-char *specs_serialize(specs *specifications)
+char *specs_serialize(specs *s)
 {
-    if (specifications == NULL)
+    if (s == NULL)
         return NULL;
 
-    // Calculate the required buffer size dynamically
-    int required_size = snprintf(NULL, 0, "%u,%.1f,%.1f,%u,%u", /*The snprintf() function is used to redirect the output of printf() function onto a buffer.*/
-                                 specifications->frames_count,
-                                 specifications->fps,
-                                 specifications->duration,
-                                 specifications->width,
-                                 specifications->height);
+    int required_size = snprintf(NULL, 0, "%lu;%lf;%lf;%lu;%lu;%i",
+                                 s->frames_count,
+                                 s->fps,
+                                 s->duration,
+                                 s->width,
+                                 s->height,
+                                 s->audio);
 
-    // Check if snprintf succeeded in calculating the required size
     if (required_size < 0)
     {
         fprintf(stderr, "Error calculating required size\n");
         return NULL;
     }
 
-    // Allocate memory for the string (by the required_size)
-    char *buffer = (char *)malloc(required_size + 1); //+1 for the null terminator (as now we deal with characters)
-
+    char *buffer = (char *)malloc(required_size + 1);
     if (buffer == NULL)
-    { // check if memory allocation was successful
+    {
         fprintf(stderr, "Memory allocation failed\n");
         return NULL;
     }
-    // write the formatted string
-    snprintf(buffer, required_size + 1, "%u,%.1f,%.1f,%u,%u", // Write formatted output to sized buffer
-             specifications->frames_count,
-             specifications->fps,
-             specifications->duration,
-             specifications->width,
-             specifications->height);
+    snprintf(buffer, required_size + 1, "%lu;%lf;%lf;%lu;%lu;%i",
+             s->frames_count,
+             s->fps,
+             s->duration,
+             s->width,
+             s->height,
+             s->audio);
 
     return buffer;
-    // free(serialized);
 }
 
-// The specs_deserialize function will convert a string back into a specs structure
 specs *specs_deserialize(char *str)
 {
     if (str == NULL)
     {
         return NULL;
     }
-    // Allocate memory for the new specs object
+
     specs *new_specs = (specs *)malloc(sizeof(specs));
     if (new_specs == NULL)
     {
@@ -85,14 +76,75 @@ specs *specs_deserialize(char *str)
         return NULL;
     }
 
-    // using sscanf to read values from the comma-separated string and store them in the corresponding fields of the specs structure
-    sscanf(str, "%u,%.1f,%f,%u,%u",
-           &new_specs->frames_count,
-           &new_specs->fps,
-           &new_specs->duration,
-           &new_specs->width,
-           &new_specs->height);
+    int parsed = sscanf(str, "%u;%lf;%lf;%lu;%lu;%i",
+                        &new_specs->frames_count,
+                        &new_specs->fps,
+                        &new_specs->duration,
+                        &new_specs->width,
+                        &new_specs->height,
+                        &new_specs->audio);
+    if (parsed < 6)
+    {
+        return NULL;
+    }
 
     return new_specs;
-    // free(deserialized);
+}
+
+int specs_write_to(specs *s, char *dest_dir)
+{
+    char buf[128];
+    snprintf(buf, sizeof(buf), "%s/%s", dest_dir, SPECS_FILE_NAME);
+
+    FILE *f = fopen(buf, "w");
+
+    if (f == NULL)
+    {
+        return -1;
+    }
+    char *content = specs_serialize(s);
+    fputs(content, f);
+    fclose(f);
+
+    return 0;
+}
+
+/**
+ * Reading specifcations from a source directory.
+ *
+ * It will return NULL if it couldn't parse the file according to invalid schema.
+ */
+specs *specs_read_from(char *src_dir)
+{
+    char buf[128];
+    snprintf(buf, sizeof(buf), "%s/%s", src_dir, SPECS_FILE_NAME);
+
+    FILE *f = fopen(buf, "r");
+    if (f == NULL)
+    {
+        fprintf(stderr, "Failed to open file for reading\n");
+        return NULL;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    char *file_content = (char *)malloc(file_size + 1);
+    if (file_content == NULL)
+    {
+        fprintf(stderr, "Memory allocation failed\n");
+        fclose(f);
+        return NULL;
+    }
+
+    fread(file_content, 1, file_size, f);
+    file_content[file_size] = '\0';
+
+    fclose(f);
+
+    specs *s = specs_deserialize(file_content);
+    free(file_content);
+
+    return s;
 }
