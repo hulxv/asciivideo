@@ -44,4 +44,3 @@ endif()
 
 # Install rules (optional)
 install(TARGETS asciivideo DESTINATION bin)
-install(DIRECTORY modules/include/ DESTINATION include)
