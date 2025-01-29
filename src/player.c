@@ -46,6 +46,7 @@ static void audio_resume(pid_t audio_pid)
         }
     }
 }
+
 static int print_frame(char *filename, WINDOW *frame_pad, int width, int height)
 {
     FILE *file = fopen(filename, "r");
@@ -78,76 +79,75 @@ player *player_new(const char *src, specs *specs)
 }
 
 int player_video_run(player *player)
-
 {
-    double fps = ceil(player->specs->fps);
+    double fps = player->specs->fps;
     uint32_t frames_count = player->specs->frames_count;
-    uint32_t duration = player->specs->duration;
+    double duration = player->specs->duration;
 
-    int delay = 1000000 / (2 * fps);
+    int frame_delay_us = 1000000 / fps;
 
     int width = player->specs->width * 4, height = player->specs->height;
 
     INFO("Video dimensions: width = %i, height = %i\n", width, height);
 
-    int offset_y;
-    int offset_x;
-
-    int term_rows, term_cols;
-    int prev_term_rows, prev_term_cols;
+    int offset_y, offset_x, term_rows, term_cols, prev_term_rows, prev_term_cols;
 
     getmaxyx(stdscr, prev_term_rows, prev_term_cols);
     WINDOW *frame_pad = newpad(height, width);
 
     if (!frame_pad)
     {
-        ERROR(" Could not create frame pad\n");
+        ERROR("Could not create frame pad\n");
         return -1;
     }
 
-    for (int i = 1; i <= player->specs->frames_count; i++)
+    uint64_t video_start_time = get_current_time_us();
+
+    for (int i = 1; i <= frames_count; i++)
     {
-        werase(frame_pad);
+        uint64_t frame_target_time = video_start_time + i * frame_delay_us * 1;
+
         do
         {
             getmaxyx(stdscr, term_rows, term_cols);
-
             offset_y = (term_rows - height) / 2;
             offset_x = (term_cols - width) / 2;
 
             if (offset_y >= 0 && offset_x >= 0)
             {
                 if (player->specs->audio)
-                audio_resume(player->audio_pid);
+                    audio_resume(player->audio_pid);
                 break;
             }
             else
             {
-
                 clear();
                 mvprintw(term_rows / 2, (term_cols - 30) / 2, "Resize terminal to %dx%d", width, height);
                 mvprintw(term_rows / 2 + 1, (term_cols - 30) / 2, "Current: %dx%d", term_cols, term_rows);
                 refresh();
 
-                usleep(10000);
                 if (player->specs->audio)
-                audio_stop(player->audio_pid);
+                    audio_stop(player->audio_pid);
+                usleep(100000);
             }
         } while (1);
 
         char filename[128];
-
         snprintf(filename, sizeof(filename), "%s/%i.ascii", player->src, i);
-
         print_frame(filename, frame_pad, width, height);
+
         if (term_rows != prev_term_rows || term_cols != prev_term_cols)
         {
             clear();
             refresh();
         }
-        prefresh(frame_pad, 0, 0, offset_y, offset_x, offset_y + height - 1, offset_x + width - 1);
 
-        usleep(delay);
+        prefresh(frame_pad, 0, 0, offset_y, offset_x, offset_y + height - 1, offset_x + width - 1);
+        uint64_t current_time = get_current_time_us();
+        if (frame_target_time > current_time)
+        {
+            usleep(frame_target_time - current_time);
+        }
 
         prev_term_rows = term_rows;
         prev_term_cols = term_cols;
@@ -164,9 +164,10 @@ int player_video_run(player *player)
  */
 int player_audio_run(player *player)
 {
+
     char audio_file[1024];
     snprintf(audio_file, sizeof(audio_file), "%s/audio.wav", player->src);
-
+    
     // Validate input parameters
     if (!audio_file || strlen(audio_file) == 0)
     {

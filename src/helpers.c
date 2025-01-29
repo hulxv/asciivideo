@@ -1,5 +1,6 @@
 #include <stdio.h>
-
+#include <time.h>
+#include <stdint.h>
 #ifdef _WIN32
 #include <windows.h>
 
@@ -97,3 +98,10 @@ void resize_terminal(int width, int height)
 }
 
 #endif
+
+uint64_t get_current_time_us()
+{
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
+}
