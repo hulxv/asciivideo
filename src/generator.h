@@ -1,5 +1,5 @@
-#ifndef _GEN_H
-#define _GEN_H
+#ifndef _ASCII_GEN_H
+#define _ASCII_GEN_H
 
 #include "./specs.h"
 #include "./video.h"
