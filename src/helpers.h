@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <libavutil/avutil.h>
+#include <stdint.h>
 
 /**
  * A simple macro used for functions that not implemented yet. Like TODO
@@ -19,7 +20,6 @@
 
 #include <stdio.h>
 
-void resize_terminal(int width, int height);
 
 #define ERROR(s, ...) av_log(NULL, AV_LOG_ERROR, "[ERROR] " s "\n", ##__VA_ARGS__)
 
@@ -30,4 +30,12 @@ void resize_terminal(int width, int height);
 #define WARN(s, ...) av_log(NULL, AV_LOG_WARNING, "[WARNING] " s "\n", ##__VA_ARGS__)
 
 #define FATAL(s, ...) av_log(NULL, AV_LOG_FATAL, "[FATAl] " s "\n", ##__VA_ARGS__)
+
+
+
+void resize_terminal(int width, int height);
+// Helper function to get the current time in microseconds
+uint64_t get_current_time_us();
+
+void precise_usleep(uint64_t delay_us); 
 #endif

@@ -105,3 +105,12 @@ uint64_t get_current_time_us()
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec * 1000000 + ts.tv_nsec / 1000;
 }
+
+void precise_usleep(uint64_t delay_us) 
+{
+    struct timespec ts = {
+        .tv_sec = delay_us / 1000000,
+        .tv_nsec = (delay_us % 1000000) * 1000
+    };
+    nanosleep(&ts, NULL);
+}
