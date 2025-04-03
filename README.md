@@ -25,6 +25,11 @@ Before , ensure that you have the following installed on your system:
 - **aplay:** A command-line audio player.
 - **CMake:** Used for building the project.
 
+```
+pkg-config libavcodec-dev libavdevice-devlibavfilter-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev libncurses5-dev
+```
+
+
 ## Installation
 
 1. **Clone the Repository**:
@@ -33,22 +38,13 @@ Before , ensure that you have the following installed on your system:
    git clone https://github.com/hulxv/asciivideo.git && cd asciivideo
    ```
 
-2. **Install required libraries**
-   ```
-   pkg-config libavcodec-dev libavdevice-devlibavfilter-dev libavformat-dev libavutil-dev libswresample-dev libswscale-dev libncurses5-dev
-   ```
-
-3. **Build the Project**:
+2. **Build the Project**:
 
    ```bash
    cmake .
    cmake --build .
-   ```
-
-4. **Install the Executable**:
-
-   ```bash
-   sudo make install
+  
+   sudo make install # for installation
    ```
 
 ## Usage
@@ -60,32 +56,6 @@ asciivideo -g <video-src> <ascii-dir>  # Generate ASCII art from video and save 
 asciivideo -p <ascii-dir>              # Play ASCII art from <src-dir>.
 ```
 
-Replace `/path/to/your/video.mp4` with the actual path to the video file you wish to play.
-
-## Contributing
-
-Contributions are welcome! To contribute:
-
-1. Fork the repository.
-2. Create a new branch:
-
-   ```bash
-   git checkout -b feature-name
-   ```
-
-3. Make your changes and commit them:
-
-   ```bash
-   git commit -m 'Add feature'
-   ```
-
-4. Push to the branch:
-
-   ```bash
-   git push origin feature-name
-   ```
-
-5. Open a pull request detailing your changes.
 
 ## License
 
