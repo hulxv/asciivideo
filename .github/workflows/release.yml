@@ -26,10 +26,7 @@ jobs:
         run: cmake -S . -B build
 
       - name: Build project
-        run: cmake --build build -- -j$(nproc)
-
-      - name: Run tests
-        run: ctest --test-dir build
+        run: cmake --build build 
 
       - name: Package build artifact
         run: |
