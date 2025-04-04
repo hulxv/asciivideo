@@ -1,56 +1,62 @@
-name: Build and Release
+name: Release
 
 on:
   push:
+    # Trigger release workflow on tags like v1.0.0
     tags:
-      - "v*.*.*"  # Triggers on version tags like v1.0.0
+      - 'v*'
+  workflow_dispatch:  # Allows manual triggering
 
 jobs:
   build:
-    name: Build on Ubuntu
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
+      - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Install dependencies
         run: |
-          sudo apt update
-          sudo apt install -y \
-            ffmpeg aplay cmake make build-essential \
-            libavcodec-dev libavdevice-dev libavfilter-dev \
-            libavformat-dev libavutil-dev libswresample-dev \
-            libswscale-dev libncurses5-dev
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+          # Install FFmpeg libraries required as dependencies
+          sudo apt-get install -y libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
 
-      - name: Configure project
-        run: cmake -DCMAKE_BUILD_TYPE=Release .
+      - name: Configure project with CMake
+        run: cmake -S . -B build
 
       - name: Build project
-        run: cmake --build . --config Release
+        run: cmake --build build -- -j$(nproc)
 
-      - name: Package binary as tarball
-        run: |
-          mkdir -p release
-          cp asciivideo release/
-          tar -czvf asciivideo-linux.tar.gz -C release asciivideo
+      - name: Run tests
+        run: ctest --test-dir build
 
-      - name: Install fpm (Deb package builder)
+      - name: Package build artifact
         run: |
-          sudo apt-get install -y ruby ruby-dev build-essential
-          sudo gem install --no-document fpm
-
-      - name: Package binary as .deb
-        run: |
-          # Extract version from tag (GITHUB_REF is "refs/tags/v1.0.0")
-          VERSION=${GITHUB_REF#refs/tags/v}
-          fpm -s dir -t deb -n asciivideo -v $VERSION --prefix /usr/local/bin asciivideo
+          # Copy the built binary from build/bin/asciivideo to the workspace
+          cp build/bin/asciivideo .
+          # Rename the binary to include the version and linux suffix, e.g., asciivideo-v1.0.0-linux
+          mv asciivideo asciivideo-${{ github.ref_name }}-linux
+          # Compress the binary using gzip for release
+          gzip -9 asciivideo-${{ github.ref_name }}-linux
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            asciivideo-linux.tar.gz
-            asciivideo.deb
+        id: create_release
+        uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./asciivideo-${{ github.ref_name }}-linux.gz
+          asset_name: asciivideo-${{ github.ref_name }}-linux.gz
+          asset_content_type: application/gzip
